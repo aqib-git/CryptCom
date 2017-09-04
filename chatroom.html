@@ -1,0 +1,172 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Socket.IO chat</title>
+    <link href="https://fonts.googleapis.com/css?family=Quicksand:300,400,500,700" rel="stylesheet">
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html {
+        font-family: 'Quicksand', sans-serif;
+      }
+      body { font: 13px Helvetica, Arial; }
+      form { background: #000; padding: 3px; position: fixed; bottom: 0; width: 100%; }
+      form input { border: 0; padding: 10px; width: 90%; margin-right: .5%; }
+      form button { width: 9%; background: rgb(130, 224, 255); border: none; padding: 10px; }
+      #messages { height:87vh; width: 90%; list-style-type: none; margin: 0; padding: 0; overflow: auto;}
+      #messages li { padding: 5px 10px; }
+      #messages li:nth-child(odd) { background: #eee; }
+      #users {max-width: 10%; border-left: 2px solid; position:absolute; top:0; right:0; bottom: 0;width: 100%; list-style-type: none;background-color:white;z-index:1000;overflow: auto;}
+      #users li { padding: 5px; color: black; font-weight: bolder;}
+      form{
+        z-index: 10000;
+      }
+    </style>
+  </head>
+  <body>
+    <ul id="messages"></ul>
+    <ul id="users"></ul>
+    <form action="">
+      <input id="m" autocomplete="off" placeholder="Write something secret..." autofocus/><button>Send</button>
+    </form>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+    <script type="text/javascript" src="/aes.js"></script>
+	<script>
+	   $(function () {
+        var socket = io();
+        var room = getRoomName();
+        var userName = getUsername();
+
+			  socket.on('connect', function() {  
+          if(!userName)
+            location.href = '/';
+          socket.emit('join room', room, userName);
+        });
+
+        socket.on('chat message', function(data){
+          var msg = decryptMsg(data.msg);
+          if(msg === false)
+            return;
+          if(data.userName === userName) {
+            $('#messages').append('<li><b>You</b> : '+msg);
+          } else {
+            $('#messages').append('<li><b>'+data.userName+'</b> : '+msg);
+          }
+          scrollDown();
+        });
+
+        socket.on('room users', function(users){
+          //console.log("getting room users");
+          $('#users').html('');
+          $.each(users, function(index, user){
+            $('#users').append('<li>'+user+'</li>');
+          });
+        });
+
+        socket.on('disconnect', (reason) => {
+          sessionStorage.clear();
+          window.location = '/';
+          //console.log("you're disconnected", reason);
+        });
+
+        socket.on('username exists', () => {
+          //console.log("username exists");
+          sessionStorage.clear();
+          window.location = '/?error=usernameexists';
+        });
+
+        socket.on('user joined', function(name){
+          if(userName === name) {
+            return;
+          }
+          //console.log("getting room users");
+          $('#messages').append("<li><b>"+name+"</b> joined this room </li>");
+        });
+
+
+        socket.on('user left', function(name){
+          console.log("getting room users");
+          $('#messages').append("<li><b>"+name+"</b> left this room </li>");
+        });
+
+        
+        $('form').submit(function(){
+          var data = {
+            userName : getUsername(),
+            msg : encryptMsg($('#m').val())
+          }
+          socket.emit('chat message', data);
+          $('#m').val('');
+          return false;
+        });
+
+        /* functions */
+
+        function getRoomName() {
+          return window.location.pathname.split('/').slice(-1)[0];
+        }
+
+        //get current room username or redirect to join room
+        function getUsername()
+        {
+          var roomValue = roomExists();
+          if(
+            !roomValue || 
+            !roomValue.userName || 
+            roomValue.userName.trim() === ''
+          ) {
+            return false;
+          }
+          return roomValue.userName;
+        }
+
+        function roomExists()
+        {
+          var rooms = sessionStorage.getItem('rooms');
+          if(!rooms) {
+            return false;
+          }
+          rooms = JSON.parse(rooms);
+          var room = false;
+          $.each(rooms, function(name, value){
+            if(name === getRoomName())
+               room = value;
+          });
+          return room;
+        }
+
+        function encryptMsg(plaintext) {
+          //console.log("encrypt", plaintext, getPassword());
+          return AesCtr.encrypt(plaintext, getPassword(), 256);
+        }
+
+        function decryptMsg(ciphertext) {
+          //console.log("decrypt", ciphertext, getPassword());
+          try {
+            return AesCtr.decrypt(ciphertext, getPassword(), 256);
+          } catch(e) {
+            return false;
+          }
+        }
+
+        function getPassword() {
+          var roomValue = roomExists();
+          if(
+            !roomValue || 
+            !roomValue.password || 
+            roomValue.password.trim().length === 0
+          ) {
+            return false;
+          }
+          return roomValue.password;
+        }
+
+        function scrollDown() {
+          $("#messages").scrollTop($("#messages").prop('scrollHeight'));
+        }
+
+		});
+	</script>
+  </body>
+</html>
+    
